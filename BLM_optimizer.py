@@ -1,443 +1,599 @@
+import os
 import random
 import math
-# import threading
-# import pynput
-# import time
-import os
-# from pynput import keyboard
-import pygame
-# import thorpy
+import time
 
 
-# **** GAME Values ****
-class game:
-    def __init__(self, limit_milliseconds):
-        self.milliseconds = 0
+class Game:
+    def __init__(self, limit_centiseconds):
+        self.centiseconds = 0
         self.game_over = False
         self.combat = False
-        self.limit_milliseconds = limit_milliseconds
+        self.limit_centiseconds = limit_centiseconds[1]
+        self.player = None
+        self.dummy = None
 
-    def update_game(self, game, dummy):  # game chrono and time limit counter
-        game.milliseconds += 1
-        game.limit_milliseconds = max(game.limit_milliseconds - 1, 0)
-        if game.limit_milliseconds == 0:
-            game.game_over = True
+    # updates game counters
+    def update(self):
+        if self.combat:
+            self.centiseconds += 1
+            self.limit_centiseconds = max(self.limit_centiseconds - 1, 0)
+        if not self.limit_centiseconds:
+            self.game_over = True
+            self.combat = False
 
 
-# **** PLAYER values ****
-class player:
-    def __init__(self, mattp, intelligence, direct_hit, critical_hit, determination, spell_speed):
-        self.mattp = mattp
-        self.intelligence = intelligence
-        self.direct_hit = direct_hit
-        self.critical_hit = critical_hit
-        self.determination = determination
-        self.spell_speed = spell_speed
-        self.available_actions = []
-        self.casting = None
-        self.casting_status = None
-        self.cast_taxed = 0
-        self.enochan_ON = 0
-        self.enochan_CD = 0
-        self.pending_enochan = 0
-        self.polyglot = 0
-        self.polyglot_counter = 0
-        self.mp = 10000
-        self.pending_mp = 0
-        self.mp_tick = 200
-        self.mp_regen = True
-        self.stance = 0
-        self.pending_stance = 0
+class Player:
+    def __init__(self, intelligence, direct_hit, critical_hit, determination, spell_speed):
+        self.intelligence = intelligence[1]
+        self.direct_hit = direct_hit[1]
+        self.critical_hit = critical_hit[1]
+        self.determination = determination[1]
+        self.spell_speed = spell_speed[1]
+
+        # Game is fetching actions and Umbral/Astral info from here
+        self.available_actions = None
+        self.stances = None
+
         self.character_tick = random.randint(0, 300)
-        self.gcd_cd = 0
-        self.leylines_cd = 0
+        self.mp = 10000
+        self.umbral_heart = 0
+
+        # Casting system
+        self.casting = None  # action being casted
+        self.cast_time = 0  # effects are applied after this time has elapsed
+        self.cast_taxed = 0  # actions maybe only be taken after this time has elapsed
+        self.gcd_CD = 0  # every GCD bound action will trigger this timer.
+        self.swift = 0  # swift cast instants left
+        self.tripleC = 0  # triple cast instants left
+
+        # oGCDs and others : ON is the duration, CD is the cooldown
+        self.enochan_ON = False
+        self.enochan_CD = 0
+        self.leylines_CD = 0
         self.leylines_ON = 0
+        self.triple_cast_ON = 0
+        self.triple_cast_CD = 0
+        self.swift_cast_ON = 0
+        self.swift_cast_CD = 0
+        self.sharpcast_ON = 0
+        self.sharpcast_CD = 0
+        self.manafont_ON = 0
+        self.manafont_CD = 0
+        self.transpose_ON = 0
+        self.transpose_CD = 0
 
-    # every player chrono is decremented by 1 every cycle. some are incremented by 1 like polyglot and server ticks
-    def update_player(self, player):
-        player.character_tick = min(player.character_tick + 1, 300)
-        if player.casting_status is not None:
-            player.casting_status = max(player.casting_status - 1, 0)
-        player.cast_taxed = max(player.cast_taxed - 1, 0)
-        player.enochan_ON = max(player.enochan_ON - 1, 0)
-        player.enochan_CD = max(player.enochan_CD - 1, 0)
-        player.gcd_cd = max(player.gcd_cd - 1, 0)
-        player.leylines_cd = max(player.leylines_cd - 1, 0)
-        player.leylines_ON = max(player.leylines_ON - 1, 0)
-        if player.stance == 0:  #
-            player.enochan_ON = 0
-        if player.enochan_ON > 0:
-            player.polyglot_counter = min(player.polyglot_counter + 1, 3000)
-        if player.enochan_ON == 0:
-            player.polyglot_counter = 0
+        # Gauge info
+        self.stance = 0  # < 0 is Umbral Ice, > 0  Astral fire, 0 is neutral
+        self.polyglot = 0  # amount of polyglot stacks
+        self.polyglot_counter = 0  # tracks every 30seconds
+        self.astral_umbral = 0
 
-    # if server tick is met while under umbral ice, regen MP
-    def math_mpregen(self, player, game):
-        stance = dstance.get(player.stance)
-        if player.character_tick == 300:
-            player.character_tick = 0
-            player.character_tick = 0
-            player.mp = min(player.mp + player.mp_tick * stance.mp_mod, 10000)
-            print("{:.2f}".format(game.milliseconds / 100).rjust(7) +
-                  " You gain " + str(player.mp_tick * stance.mp_mod) + " MP.")
+    # calculates MP tick at server tick and updates player if stance allows
+    def math_mp_tick(self):
+        mp_per_tick = 200  # base regen
+        mp_mod = self.stances.get(self.stance).mp_mod
+        if self.character_tick == 300:
+            self.character_tick = 0
+            self.mp = min(mp_per_tick * mp_mod + self.mp, 10000)
 
-    # if 30 seconds elapsed, add 1 polyglot stack
-    def math_polyglot(self, player, game):
-        if player.polyglot_counter == 3000:
-            player.polyglot = min(player.polyglot + 1, 2)
-            print("{:.2f}".format(game.milliseconds / 100).rjust(7) +
-                  "You gain a polyglot stack and you now have " + str(int(player.polyglot)) + " stacks.")
-            player.polyglot_counter = 0
+    # adds 1 polyglot every 30s of active enochan
+    def math_polyglot(self):
+        if self.polyglot_counter == 3000:
+            self.polyglot_counter = 0
+            self.polyglot = min(self.polyglot + 1, 2)
+
+    # updates every player counters
+    def update(self):
+        self.character_tick = min(self.character_tick + 1, 300)
+
+        self.cast_time = max(self.cast_time - 1, 0)
+        self.cast_taxed = max(self.cast_taxed - 1, 0)
+        self.gcd_CD = max(self.gcd_CD - 1, 0)
+
+        self.astral_umbral = max(self.astral_umbral - 1, 0)
+        if not self.astral_umbral:
+            self.stance = 0
+
+        if not self.stance:  # if not in a stance, enochan is lost
+            self.enochan_ON = False
+        else:
+            self.enochan_ON = True
+        self.enochan_CD = max(self.enochan_CD - 1, 0)
+        self.leylines_ON = max(self.leylines_ON - 1, 0)
+        self.leylines_CD = max(self.leylines_CD - 1, 0)
+        self.triple_cast_ON = max(self.triple_cast_ON - 1, 0)
+        self.triple_cast_CD = max(self.triple_cast_CD - 1, 0)
+        self.swift_cast_ON = max(self.swift_cast_ON - 1, 0)
+        self.swift_cast_CD = max(self.swift_cast_CD - 1, 0)
+        self.sharpcast_ON = max(self.sharpcast_ON - 1, 0)
+        self.sharpcast_CD = max(self.sharpcast_CD - 1, 0)
+        self.manafont_ON = max(self.manafont_ON - 1, 0)
+        self.manafont_CD = max(self.manafont_CD - 1, 0)
+        self.transpose_ON = max(self.transpose_ON - 1, 0)
+        self.transpose_CD = max(self.transpose_CD - 1, 0)
+
+        if self.enochan_ON:
+            self.polyglot_counter = min(self.polyglot_counter + 1, 3000)
+        else:
+            self.polyglot_counter = 0
+            self.umbral_heart = 0
 
 
-# **** DUMMY values ****
-class dummy:
+class Dummy:
     def __init__(self):
         self.damage_taken = 0
-        self.pending_damage = None
+
+        self.dots = None
         self.character_tick = random.randint(0, 300)
 
+    def update(self):
+        self.character_tick = min(self.character_tick + 1, 300)
+        for dot in self.dots:
+            dot.active_time = max(dot.active_time - 1, 0)
 
-# **** Astral Fire and Umbral Ice values ****
-class stance:
-    def __init__(self, fire_cost, fire_damage, ice_cost, ice_damage, ice_cast, fire_cast, mp_mod, name):
-        self.fire_cost = fire_cost
-        self.fire_damage = fire_damage
-        self.ice_cost = ice_cost
-        self.ice_damage = ice_damage
-        self.ice_cast = ice_cast
-        self.fire_cast = fire_cast
+    def math_DoTs(self, game, player):
+        if self.character_tick == 300:
+            self.character_tick = 0
+            for dot in self.dots:
+                if dot.active_time:
+                    dhit_prob = math.floor(
+                        550 * (player.direct_hit - 380) / 3300) / 10
+                    crit_prob = math.floor(
+                        200 * (player.critical_hit - 380) / 3300 + 50) / 10
+                    fmattp = math.floor(
+                        165 * (player.intelligence - 340) / 340) + 100
+                    fdet = math.floor(
+                        130 * (player.determination - 340) / 3300 + 1000)
+                    fwd = math.floor(340 * 115 / 1000 + 172)
+                    ftnc = 1000
+                    fspd = math.floor(
+                        130 * (player.spell_speed - 380) / 3300 + 1000)
+                    d1 = math.floor(math.floor(math.floor(math.floor(math.floor(
+                        math.floor(dot.potency * fwd) / 100) * fmattp) / 100) * fspd) / 1000)
+                    d2 = math.floor(math.floor(math.floor(math.floor(math.floor(
+                        math.floor(d1 * fdet) / 1000) * ftnc) / 1000) * 130) / 100) + 1
+                    d3 = math.floor(math.floor(
+                        d2 * random.uniform(95, 105)) / 100)
+                    if random.random() <= dhit_prob / 100:
+                        dh = 125
+                    else:
+                        dh = 100
+                    if random.random() <= crit_prob / 100:
+                        fcrit = math.floor(
+                            200 * (player.critical_hit - 380) / 3300 + 1400)
+                    else:
+                        fcrit = 1000
+                    damage = math.floor(math.floor(math.floor(math.floor(
+                        math.floor(d3 * fcrit) / 1000) * dh) / 100) * dot.buff1)
+                    self.damage_taken += damage
+                    print("%6.2f The dummy takes %d damage from %s." %
+                          (game.centiseconds / 100, damage, dot.name))
+
+
+# Umbral Ice and Astral Fire class
+class Stance:
+    def __init__(self, fire_cost_mod, fire_dmg_mod, ice_cost_mod, ice_dmg_mod, mp_mod, stance_name):
+        self.stance_name = stance_name
+        self.fire_cost_mod = fire_cost_mod
+        self.fire_dmg_mod = fire_dmg_mod
+        self.ice_cost_mod = ice_cost_mod
+        self.ice_dmg_mod = ice_dmg_mod
         self.mp_mod = mp_mod
-        self.name = name
 
 
-# fire_cost, fire_damage, ice_cost, ice_damage, ice_cast, fire_cast, mp_mod, name
-default_stance = stance(1,   1,    1,   1,   1,   1,    1, "Neutral Stance")
-stancef1 = stance(2, 1.4,  0.5, 0.9,   1,   1,    0, "Astral Fire I")
-stancef2 = stance(2, 1.6, 0.25, 0.8,   1,   1,    0, "Astral Fire II")
-stancef3 = stance(2, 1.8,    0, 0.7, 0.5,   1,    0, "Astral Fire III")
-stanceb1 = stance(0.5, 0.9, 0.75,   1,   1,   1,   16, "Umbral Ice I")
-stanceb2 = stance(0.25, 0.8,  0.5,   1,   1,   1, 23.5, "Umbral Ice II")
-stanceb3 = stance(0, 0.7,    0,   1,   1, 0.5,   31, "Umbral Ice III")
-
-dstance = {
-    0: default_stance,
-    1: stancef1,
-    2: stancef2,
-    3: stancef3,
-    -1: stanceb1,
-    -2: stanceb2,
-    -3: stanceb3,
-}
-
-
-# Will hold damage properties
-class damage():
-    def __init__(self, amount, crit, dh):
-        self.amount = amount
-        self.crit = crit
-        self.dh = dh
-
-
-# Will hold DoT properties
-class dot():
-    def __init__(self, amount, crit, dh):
-        return
-
-
-# **** BLM GCDs and oGCDs ****
-class blm_actions:
-    def __init__(self, name, cast_delay, tax, recast_delay, potency, cost, element, gcd):
+class GCDs:
+    def __init__(self, cast_delay, recast_delay, potency, cost, element, name):
         self.name = name
         self.cast_delay = cast_delay
         self.recast_delay = recast_delay
         self.potency = potency
         self.cost = cost
         self.element = element
-        self.tax = tax
-        self.gcd = gcd
+        self.tax = 10
 
-    def math_cast(self, action, player):
+    # calculation of casting time and cast taxed
+    # buff1 is enochan, buff2 is the speed bonus from swapping element
+    def math_cast(self, player):
         fspd = math.floor(130 * (player.spell_speed - 380) / 3300 + 1000)
-        gcd1 = math.floor((2000 - fspd) * action.cast_delay / 1000)
+        gcd1 = math.floor((2000 - fspd) * self.cast_delay / 1000)
         if player.leylines_ON > 0:
-            gcd2 = math.floor((100 - 15) * (100 - 0) / 100)
+            buff1 = 15
         else:
-            gcd2 = math.floor((100 - 0) * (100 - 0) / 100)
+            buff1 = 0
+        gcd2 = math.floor((100 - buff1) * (100 - 0) / 100)
         gcd3 = (100 - 0) / 100
-        if player.stance == 3 and action.element == "ice":
-            gcd4 = math.floor(math.floor(
-                math.ceil(gcd2 * gcd3) * gcd1 / 100) * 50 / 100)
-        elif player.stance == -3 and action.element == "fire":
-            gcd4 = math.floor(math.floor(
-                math.ceil(gcd2 * gcd3) * gcd1 / 100) * 50 / 100)
+        if player.stance == 3 and self.element == "ice":
+            buff2 = 50
+        elif player.stance == -3 and self.element == "fire":
+            buff2 = 50
         else:
-            gcd4 = math.floor(math.floor(
-                math.ceil(gcd2 * gcd3) * gcd1 / 100) * 100 / 100)
-        cast = gcd4
-        return (cast)
+            buff2 = 100
+        cast = math.floor(math.floor(math.ceil(gcd2 * gcd3) *
+                                     gcd1 / 100) * buff2 / 100)
+        if player.swift:  # 75 centiseconds is the instant cast tax
+            player.swift = max(player.swift - 1, 0)
+            player.cast_time = 0
+            player.cast_taxed = 75
+        elif player.tripleC:
+            player.tripleC = max(player.tripleC - 1, 0)
+            player.cast_time = 0
+            player.cast_taxed = 75
+        else:
+            player.cast_time = cast
+            player.cast_taxed = cast + self.tax
 
-    def math_cast_taxed(self, action, player):
+    # buff1 is enochan
+    def math_GCD_CD(self, player):
         fspd = math.floor(130 * (player.spell_speed - 380) / 3300 + 1000)
-        gcd1 = math.floor((2000 - fspd) * action.cast_delay / 1000)
+        gcd1 = math.floor((2000 - fspd) * self.recast_delay / 1000)
         if player.leylines_ON > 0:
-            gcd2 = math.floor((100 - 15) * (100 - 0) / 100)
+            buff1 = 15
         else:
-            gcd2 = math.floor((100 - 0) * (100 - 0) / 100)
+            buff1 = 0
+        gcd2 = math.floor((100 - buff1) * (100 - 0) / 100)
         gcd3 = (100 - 0) / 100
-        if player.stance == 3 and action.element == "ice":
-            gcd4 = math.floor(math.floor(
-                math.ceil(gcd2 * gcd3) * gcd1 / 100) * 50 / 100)
-        elif player.stance == -3 and action.element == "fire":
-            gcd4 = math.floor(math.floor(
-                math.ceil(gcd2 * gcd3) * gcd1 / 100) * 50 / 100)
-        else:
-            gcd4 = math.floor(math.floor(
-                math.ceil(gcd2 * gcd3) * gcd1 / 100) * 100 / 100)
-        cast_taxed = gcd4 + action.tax
-        return (cast_taxed)
+        recast = math.floor(math.ceil(gcd2 * gcd3) * gcd1 / 100)
+        player.gcd_CD = recast
 
-    def math_recast(self, action, player):
-        if action.gcd:
-            fspd = math.floor(130 * (player.spell_speed - 380) / 3300 + 1000)
-            gcd1 = math.floor((2000 - fspd) * action.recast_delay / 1000)
-            if player.leylines_ON > 0:
-                gcd2 = math.floor((100 - 15) * (100 - 0) / 100)
+        # Flare and Despair take all the MP. Returns False if player can't afford it. Otherwise depletes MP
+    def math_mpcost(self, player):
+        stance = player.stances.get(player.stance)
+        if self.name == "Despair" and player.mp > self.cost:
+            mp_cost = player.mp
+        elif self.name == "Despair" and player.mp < self.cost:
+            return(False)
+        elif self.name == "Flare" and player.mp > self.cost:
+            if player.umbral_heart:
+                mp_cost = math.ceil((player.mp / 3) / 100 + 1) * 100
             else:
-                gcd2 = math.floor((100 - 0) * (100 - 0) / 100)
-            gcd3 = (100 - 0) / 100
-            gcd4 = math.floor(math.floor(
-                math.ceil(gcd2 * gcd3) * gcd1 / 100) * 100 / 100)
-            recast = gcd4
-            return (recast)
+                mp_cost = player.mp
+        elif self.name == "Flare" and player.mp < self.cost:
+            return(False)
+        elif self.element == "ice":
+            mp_cost = self.cost * stance.ice_cost_mod
+        # TODO MP is only removed at the end of the cast. see finish_casting function in case of interrupts.
+        elif self.element == "fire":
+            if player.umbral_heart and player.stance > 0:
+                mp_cost = self.cost
+            else:
+                mp_cost = self.cost * stance.fire_cost_mod
         else:
-            recast = action.recast_delay
-            return (recast)
-
-    def math_mpcost(self, action, player):
-        stance = dstance.get(player.stance)
-        if action.name == "Despair":
-            mp_cost = action.cost
-        elif action.element == "ice":
-            mp_cost = action.cost * stance.ice_cost
-        elif action.element == "fire":
-            mp_cost = action.cost * stance.fire_cost
+            mp_cost = self.cost
+        if player.mp - mp_cost < 0:
+            return(False)
         else:
-            mp_cost = action.cost
-        return(mp_cost)
+            player.mp - mp_cost
+            return(True)
 
-    def math_damage(self, action, player):
-        damage_dealt = damage(0, False, False)
+    def math_damage(self, game, player, dummy):
         dhit_prob = math.floor(550 * (player.direct_hit - 380) / 3300) / 10
         crit_prob = math.floor(
             200 * (player.critical_hit - 380) / 3300 + 50) / 10
-        fmattp = math.floor(165 * (player.mattp - 340) / 340) + 100
+        fmattp = math.floor(165 * (player.intelligence - 340) / 340) + 100
         fdet = math.floor(130 * (player.determination - 340) / 3300 + 1000)
         fwd = math.floor(340 * 115 / 1000 + 172)
         ftnc = 1000
         d1 = math.floor(math.floor(math.floor(
-            action.potency * fmattp * fdet) / 100) / 1000)
+            self.potency * fmattp * fdet) / 100) / 1000)
         trait = 130
         d2 = math.floor(math.floor(math.floor(math.floor(math.floor(
             math.floor(d1 * ftnc) / 1000) * fwd) / 100) * trait) / 100)
         if random.random() <= dhit_prob / 100:
             dh = 125
-            damage_dealt.dh = True
         else:
             dh = 100
         if random.random() <= crit_prob / 100:
             fcrit = math.floor(200 * (player.critical_hit - 380) / 3300 + 1400)
-            damage_dealt.crit = True
         else:
             fcrit = 1000
         d3 = math.floor(math.floor(math.floor(
             math.floor(d2 * fcrit) / 1000) * dh) / 100)
-        if player.enochan_ON > 0:
+        if player.enochan_ON:
             buff1 = 1.15
         else:
             buff1 = 1
-        stance = dstance.get(player.stance)
-        if action.element == "ice":
-            buff2 = stance.ice_damage
-        elif action.element == "fire":
-            buff2 = stance.fire_damage
+        stance = player.stances.get(player.stance)
+        if self.element == "ice":
+            buff2 = stance.ice_dmg_mod
+        elif self.element == "fire":
+            buff2 = stance.fire_dmg_mod
         else:
             buff2 = 1
-        damage_dealt.amount = math.floor(math.floor(math.floor(math.floor(
+        damage_dealt = math.floor(math.floor(math.floor(math.floor(
             d3 * random.uniform(95, 105)) / 100) * buff1) * buff2)
-        return(damage_dealt)
+        dummy.damage_taken = damage_dealt
 
 
-# name, cast_delay, tax, recast_delay, potency, cost, element, gcd
-b1 = blm_actions("Blizzard",     250, 10,  250, 180,  400, "ice",     True)
-b2 = blm_actions("Blizzard II",  200, 10,  250,  50,  800, "ice",     True)
-b3 = blm_actions("Blizzard III", 350, 10,  250, 240,  800, "ice",     True)
-b4 = blm_actions("Blizzard IV",  280, 10,  250, 300,  800, "ice",     True)
-f1 = blm_actions("Fire",         250, 10,  250, 180,  800, "fire",    True)
-f2 = blm_actions("Fire II",      300, 10,  250,  80, 1500, "fire",    True)
-f3 = blm_actions("Fire III",     350, 10,  250, 240, 2000, "fire",    True)
-f4 = blm_actions("Fire IV",      280, 10,  250, 300,  800, "fire",    True)
-sc = blm_actions("Scathe",         0, 10,  250, 100,  800, "neutral", True)
-xe = blm_actions("Xenoglossy",     0, 10,  250, 750,    0, "neutral", True)
-de = blm_actions("Despair",      300, 10,  250, 380,  800, "fire",    True)
-en = blm_actions("Enochan",        0, 75, 3000,   0,    0, "neutral", False)
+class oGCDs:
+    def __init__(self, duration, recast_delay, name):
+        self.name = name
+        self.duration = duration
+        self.cast_delay = 75
+        self.recast_delay = recast_delay
+
+    def math_cast(self, player):
+        player.cast_taxed = self.cast_delay
+
+    def math_CD(self,):
+        return(self.recast_delay)
 
 
-def do_something(player, game, dummy):
-    action_used = random.choice(player.available_actions)
-    if action_used is not None:
-        mpcost = action_used.math_mpcost(action_used, player)
-        if player.mp - mpcost < 0:
-            return
-        elif action_used.gcd:
-            if player.gcd_cd > 0:
-                return
-            elif action_used.name == "Despair" and player.stance != 3 and not player.enochan_ON > 0:
-                return
-            elif action_used.name == "Xenoglossy" and not player.polyglot > 0:
-                return
-            elif action_used.name == "Foul" and not player.polyglot > 0:
-                return
-            elif action_used.name == "Fire IV" and player.stance != 3 and not player.enochan_ON > 0:
-                return
-            elif action_used.name == "Blizzard IV" and player.stance != -3 and not player.enochan_ON > 0:
-                return
-            else:
-                print("\n" + "{:.2f}".format(game.milliseconds / 100).rjust(7) +
-                      " You started casting " + action_used.name + ".")
-                player.casting_status = action_used.math_cast(
-                    action_used, player)
-                player.gcd_cd = action_used.math_recast(action_used, player)
-                player.cast_taxed = action_used.math_cast_taxed(
-                    action_used, player)
-                player.casting = action_used
-                player.pending_mp = - mpcost
-                dummy.pending_damage = action_used.math_damage(
-                    action_used, player)
-                if action_used.name == "Blizzard III":
-                    player.pending_stance = -6
-                elif action_used.name == "Fire III":
-                    player.pending_stance = 6
-                elif action_used.element == "fire" and player.stance >= 0:
-                    player.pending_stance = 1
-                elif action_used.element == "fire" and player.stance < 0:
-                    player.pending_stance = -player.stance
-                elif action_used.element == "ice" and player.stance <= 0:
-                    player.pending_stance = -1
-                elif action_used.element == "ice"and player.stance > 0:
-                    player.pending_stance = -player.stance
-        elif not action_used.gcd:
-            if action_used.name == "Enochan" and abs(player.stance) != 3:
-                return
-            elif action_used == "Enochan":
-                player.enochan_CD = action_used.math_recast(
-                    action_used, player)
-                player.cast_taxed = action_used.math_cast_taxed(
-                    action_used, player)
-                player.casting_status = action_used.math_cast(
-                    action_used, player)
-                player.pending_enochan = 15
-    else:
-        return
+class DoTs:
+    def __init__(self, potency, duration, name):
+        self.name = name
+        self.potency = potency
+        self.duration = duration
+        self.active_time = 0
+        self.buff1 = 1
 
 
-def apply_pending_values(player, game, dummy):
-    if player.casting is not None:
-        print("{:.2f}".format(game.milliseconds / 100).rjust(7) +
-              " You finished casting " + player.casting.name + ".")
-    player.casting = None
-    player.mp += player.pending_mp
-    if player.pending_mp != 0:
-        print("{:.2f}".format(game.milliseconds / 100).rjust(7) +
-              " You used " + str(int(player.pending_mp)) + " MP.")
-    player.pending_mp = 0
-    player.stance = max(min(player.stance + player.pending_stance, 3), -3)
-    if player.pending_stance != 0:
-        stance = dstance.get(player.stance)
-        print("{:.2f}".format(game.milliseconds / 100).rjust(7) +
-              " You are now in " + stance.name + ".")
-    player.pending_stance = 0
-    player.enochan_ON = min(player.enochan_ON + player.pending_enochan, 15)
-    player.pending_enochan = 0
-    if dummy.pending_damage is not None:
-        dummy.damage_taken += dummy.pending_damage.amount
-        print("{:.2f}".format(game.milliseconds / 100).rjust(7) +
-              " The dummy takes " + str(dummy.pending_damage.amount) + " damage. Critical hit: " + str(dummy.pending_damage.crit) + "| Direct hit : " + str(dummy.pending_damage.dh))
-        dummy.pending_damage = None
-
-
-def clear_screen():
+# initialize classes and player stance/actions
+def initialize():
     os.system("cls")
 
+    game = Game(("Time limit", 39000))
 
-def load_player():
-    sps_build = {
-        "Magic Attack Power": 4867,
-        "Intelligence": 4867,
-        "Direct Hit": 2974,
-        "Critical Hit": 528,
-        "Determination": 1915,
-        "Spell Speed": 3761,
+    game.player = Player(("Intelligence", 4867), ("Direct_Hit", 2974),
+                         ("Critical Hit", 528), ("Determination", 1915), ("Spell Speed", 3761))
+    game.dummy = Dummy()
+
+    # fire_cost, fire_damage, ice_cost, ice_damage, mp_mod, name
+    stanced0 = Stance(1, 1, 1, 1, 1, "Neutral Stance")
+    stancef1 = Stance(2, 1.4, 0.5, 0.9, 0, "Astral Fire I")
+    stancef2 = Stance(2, 1.6, 0.25, 0.8, 0, "Astral Fire II")
+    stancef3 = Stance(2, 1.8, 0, 0.7, 0, "Astral Fire III")
+    stanceb1 = Stance(0.5, 0.9, 0.75, 1, 16, "Umbral Ice I")
+    stanceb2 = Stance(0.25, 0.8, 0.5, 1, 23.5, "Umbral Ice II")
+    stanceb3 = Stance(0, 0.7, 0, 1, 31, "Umbral Ice III")
+    game.player.stances = {
+        0: stanced0,
+        1: stancef1,
+        2: stancef2,
+        3: stancef3,
+        -1: stanceb1,
+        -2: stanceb2,
+        -3: stanceb3,
     }
-    selected_build = sps_build
-    return (player(selected_build.get("Magic Attack Power"), selected_build.get("Intelligence"), selected_build.get(
-        "Direct Hit"), selected_build.get("Critical Hit"), selected_build.get("Determination"), selected_build.get("Spell Speed")))
+
+    # cast_delay, recast_delay, potency, cost, element, name
+    b1 = GCDs(250, 250, 180, 400, "ice", "Blizzard I")
+    b2 = GCDs(200, 250, 50, 800, "ice", "Blizzard II")
+    b3 = GCDs(350, 250, 240, 800, "ice", "Blizzard III")
+    b4 = GCDs(280, 250, 300, 800, "ice", "Blizzard IV")
+    f1 = GCDs(250, 250, 180, 800, "fire", "Fire I")
+    f2 = GCDs(300, 250, 80, 1500, "fire", "Fire II")
+    f3 = GCDs(350, 250, 240, 2000, "fire", "Fire III")
+    f4 = GCDs(280, 250, 300, 800, "fire", "Fire IV")
+    sc = GCDs(0, 250, 100, 800, "neutral", "Scathe")
+    xe = GCDs(0, 250, 750, 0, "neutral", "Xenoglossy")
+    fo = GCDs(250, 250, 650, 0, "neutral", "Foul")
+    de = GCDs(300, 250, 380, 800, "fire", "Despair")
+    t3 = GCDs(250, 250, 70, 400, "neutral", "Thunder III")
+    t4 = GCDs(250, 250, 50, 800, "neutral", "Thunder IV")
+    fl = GCDs(400, 250, 260, 800, "fire", "Flare")
+    fr = GCDs(250, 250, 100, 1000, "ice", "Freeze")
+    us = GCDs(0, 250, 0, 0, "ice", "Umbral Soul")
+
+    # duration, recast_delay, name
+    tr = oGCDs(0, 500, "Transpose")
+    ma = oGCDs(0, 18000, "Manafont")
+    ll = oGCDs(3000, 9000, "Ley Lines")
+    en = oGCDs(0, 3000, "Enochan")
+    tc = oGCDs(1500, 6000, "Triple Cast")
+    sw = oGCDs(1000, 6000, "Swift Cast")
+
+    # TODO thunder procs, IV and III, sharpcast
+
+    # potency, duration, name
+    t3_dot = DoTs(40, 2400, "Thunder III")
+    t4_dot = DoTs(30, 1800, "Thunder IV")
+
+    game.player.available_actions = [
+        b1, b2, b3, b4, f1, f2, f3, f4, sc, xe, fo, de, t3, t4, fl, None, fr, us, tr, ma, ll, en, tc, sw]
+    game.dummy.dots = [t3_dot, t4_dot]
+
+    return(game)
 
 
-def load_game():
-    '''one_minute = {
-        "Time limit": 6000,
-    }'''
-    reopener = {
-        "Time limit": 69000,
-    }
-    selected_encounter = reopener
-    return(game(selected_encounter.get("Time limit")))
+# wastes 1 centisecond if attempting to do an action that cannot be used atm
+def do_something(game):
+    action_used = random.choice(game.player.available_actions)
+    if action_used is not None:
+        if type(action_used) is GCDs:
+            if action_used.math_mpcost(game.player) and not game.player.gcd_CD:
+                if action_used.name == "Despair" and (game.player.stance != 3 or not game.player.enochan_ON):
+                    return
+                elif action_used.name == "Xenoglossy" and not game.player.polyglot > 0:
+                    return
+                elif action_used.name == "Foul" and not game.player.polyglot > 0:
+                    return
+                elif action_used.name == "Fire IV" and (game.player.stance != 3 or not game.player.enochan_ON):
+                    return
+                elif action_used.name == "Blizzard IV" and (game.player.stance != -3 or not game.player.enochan_ON):
+                    return
+                elif action_used.name == "Umbral Soul" and (not game.player.enochan_ON or not game.player.stance < 0):
+                    return
+                else:
+                    print("")
+                    game.player.casting = action_used
+                    action_used.math_cast(game.player)
+                    action_used.math_GCD_CD(game.player)
+                    print("%6.2f You started casting %s." %
+                          (game.centiseconds / 100, action_used.name))
+            else:
+                return
+
+        elif type(action_used) is oGCDs:
+            if action_used.name == "Transpose":
+                if game.player.transpose_CD:
+                    return
+                else:
+                    action_used.math_cast(game.player)
+                    game.player.transpose_CD = action_used.math_CD()
+                    game.player.casting = action_used
+                    print("%6.2f You started casting %s." %
+                          (game.centiseconds / 100, action_used.name))
+            elif action_used.name == "Manafont":
+                if game.player.manafont_CD:
+                    return
+                else:
+                    action_used.math_cast(game.player)
+                    game.player.manafont_CD = action_used.math_CD()
+                    game.player.casting = action_used
+                    print("%6.2f You started casting %s." %
+                          (game.centiseconds / 100, action_used.name))
+            elif action_used.name == "Ley Lines":
+                if game.player.leylines_CD:
+                    return
+                else:
+                    action_used.math_cast(game.player)
+                    game.player.leylines_CD = action_used.math_CD()
+                    game.player.leylines_ON = action_used.duration
+                    game.player.casting = action_used
+                    print("%6.2f You started casting %s." %
+                          (game.centiseconds / 100, action_used.name))
+            elif action_used.name == "Enochan":
+                if game.player.enochan_CD:
+                    return
+                else:
+                    action_used.math_cast(game.player)
+                    game.player.enochan_CD = action_used.math_CD()
+                    game.player.casting = action_used
+                    print("%6.2f You started casting %s." %
+                          (game.centiseconds / 100, action_used.name))
+            elif action_used.name == "Triple Cast":
+                if game.player.triple_cast_CD:
+                    return
+                else:
+                    action_used.math_cast(game.player)
+                    game.player.triple_cast_CD = action_used.math_CD()
+                    game.player.triple_cast_ON = action_used.duration
+                    game.player.casting = action_used
+                    print("%6.2f You started casting %s." %
+                          (game.centiseconds / 100, action_used.name))
+            elif action_used.name == "Swift Cast":
+                if game.player.swift_cast_CD:
+                    return
+                else:
+                    action_used.math_cast(game.player)
+                    game.player.swift_cast_CD = action_used.math_CD()
+                    game.player.swift_cast_ON = action_used.duration
+                    game.player.casting = action_used
+                    print("%6.2f You started casting %s." %
+                          (game.centiseconds / 100, action_used.name))
 
 
-def load_actions(player):
-    player.available_actions = [b1, b2, b3, b4,
-                                f1, f2, f3, f4, sc, xe, de, None, en]
-    # player.available_actions = [b1, b2, b3, b4]
+# Applies effects of the cast
+def finish_casting(game):  # TODO Umbral heart use in math_mpcost
+    if type(game.player.casting) is GCDs:
+        game.player.casting.math_damage(game, game.player, game.dummy)
+        if game.player.casting.name == "Flare":
+            game.player.stance = 3
+            game.player.astral_umbral = 1500
+            game.player.umbral_heart = 0
+        elif game.player.casting.name == "Blizzard III":
+            game.player.stance = -3
+            game.player.astral_umbral = 1500
+        elif game.player.casting.name == "Fire III":
+            game.player.stance = 3
+            game.player.astral_umbral = 1500
+        elif game.player.casting.name == "Foul" or game.player.casting.name == "Xenoglossy":
+            game.player.polyglot -= 1
+        elif game.player.casting.name == "Blizzard IV":
+            game.player.umbral_heart = 3
+        elif game.player.casting.name == "Umbral Soul":
+            game.player.stance = max(game.player.stance - 1, -3)
+            game.player.umbral_heart = min(game.player.umbral_heart + 1, 3)
+            game.player.astral_umbral = 1500
+        elif game.player.casting.name == "Freeze":
+            game.player.stance = -3
+            if not game.player.umbral_heart > 1:
+                game.player.umbral_heart = 1
+            game.player.astral_umbral = 1500
+        elif game.player.casting.name == "Thunder III":
+            index = 0
+            for dot in game.dummy.dots:
+                if dot.name == "Thunder III":
+                    break
+                else:
+                    index += 1
+            game.dummy.dots[index].active_time = game.dummy.dots[index].duration
+        elif game.player.casting.name == "Thunder IV":
+            index = 0
+            for dot in game.dummy.dots:
+                if dot.name == "Thunder IV":
+                    break
+                else:
+                    index += 1
+            game.dummy.dots[index].active_time = game.dummy.dots[index].duration
+        elif game.player.casting.element == "fire" and game.player.stance >= 0:
+            game.player.stance = min(game.player.stance + 1, 3)
+            game.player.umbral_heart = max(game.player.umbral_heart - 1, 0)
+            if game.player.casting.name != "Fire IV":
+                game.player.astral_umbral = 1500
+        elif game.player.casting.element == "ice" and game.player.stance <= 0:
+            game.player.stance = max(game.player.stance - 1, -3)
+            game.player.astral_umbral = 1500
+        elif game.player.casting.element == "fire" and not game.player.stance >= 0:
+            game.player.stance = 0
+            game.player.astral_umbral = 0
+        elif game.player.casting.element == "ice" and not game.player.stance <= 0:
+            game.player.stance = 0
+            game.player.astral_umbral = 0
+        print("%6.2f You finished casting %s." %
+              (game.centiseconds / 100, game.player.casting.name))
+        print("      The state of enochan_ON is %s" % (game.player.enochan_ON))
+        print("      The state of Astral_Umbral is %d" %
+              (game.player.astral_umbral))
+        print("      You have %d Umbral Hearts." %
+              (game.player.umbral_heart))
+        game.player.casting = None
+    elif type(game.player.casting) is oGCDs:
+        if game.player.casting.name == "Transpose":
+            if game.player.stance > 0:
+                game.player.stance = -1
+                game.player.astral_umbral = 1500
+            elif game.player.stance < 0:
+                game.player.stance = 1
+                game.player.astral_umbral = 1500
+        elif game.player.casting.name == "Manafont":
+            game.player.mp = min(game.player.mp + 3000, 10000)
+        elif game.player.casting.name == "Enochan":
+            game.player.enochan_ON = True
+        elif game.player.casting.name == "Triple Cast":
+            game.player.tripleC = 3
+        elif game.player.casting.name == "Swift Cast":
+            game.player.swift = 1
+        print("%6.2f You finished casting %s." %
+              (game.centiseconds / 100, game.player.casting.name))
+        game.player.casting = None
 
+
+# TODO check for interrupts
 
 def main():
-    clear_screen()
-    current_player = load_player()
-    current_game = load_game()
-    target_dummy = dummy()
-    load_actions(current_player)
-    pygame.init()
-    while not current_game.game_over:
-        # pygame.time.delay(10)
-        # uncomment line 404 to remove real time sim
+    game = initialize()
+    while not game.game_over:
+        # time.sleep(10)
+        # Comment above line to remove real time sim
 
-        ''' Order of events:
-            Game updates MP and Polyglot status
-            If not casting + cast tax, then player may take an action
-            Action effects and damage are calculated at the end of the cast
-            game and player status are updated at the end of the cycle. game status only if in combat
-        '''
+        game.combat = True
 
-        current_player.math_mpregen(current_player, current_game)
-        current_player.math_polyglot(current_player, current_game)
-        if current_player.cast_taxed > 0:
+        game.player.math_mp_tick()
+        game.player.math_polyglot()
+        game.dummy.math_DoTs(game, game.player)
+
+        if game.player.cast_taxed:
             None
         else:
-            do_something(current_player, current_game, target_dummy)
-        if current_player.casting_status is not None:
-            # Add action being casted to player.casting, math values here instead of player.pending_X
-            if current_player.casting_status == 0:
-                apply_pending_values(
-                    current_player, current_game, target_dummy)
-        if target_dummy.damage_taken != 0:
-            current_game.combat = True
-        if current_game.combat:
-            current_game.update_game(current_game, target_dummy)
-        current_player.update_player(current_player)
-    print("{:.2f}".format(current_game.milliseconds / 100).rjust(7) +
-          " Your DPS is: " + "{:.2f}".format(target_dummy.damage_taken / current_game.milliseconds * 100))
-    pygame.quit()
+            do_something(game)
+        if game.player.cast_time == 0 and game.player.casting is not None:
+            finish_casting(game)
+
+        game.update()
+        game.player.update()
+        game.dummy.update()
 
 
 main()
