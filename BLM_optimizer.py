@@ -70,18 +70,23 @@ class Player:
         self.astral_umbral = 0
 
     # calculates MP tick at server tick and updates player if stance allows
-    def math_mp_tick(self):
+    def math_mp_tick(self, game):
         mp_per_tick = 200  # base regen
         mp_mod = self.stances.get(self.stance).mp_mod
         if self.character_tick == 300:
             self.character_tick = 0
             self.mp = min(mp_per_tick * mp_mod + self.mp, 10000)
+            if mp_per_tick * mp_mod:
+                print("%6.2f You gain %d MP." %
+                      (game.centiseconds / 100, mp_per_tick * mp_mod))
 
     # adds 1 polyglot every 30s of active enochan
-    def math_polyglot(self):
+    def math_polyglot(self, game):
         if self.polyglot_counter == 3000:
             self.polyglot_counter = 0
             self.polyglot = min(self.polyglot + 1, 2)
+            print("%6.2f You gain a polyglot stack MP." %
+                  (game.centiseconds / 100))
 
     # updates every player counters
     def update(self):
@@ -97,8 +102,6 @@ class Player:
 
         if not self.stance:  # if not in a stance, enochan is lost
             self.enochan_ON = False
-        else:
-            self.enochan_ON = True
         self.enochan_CD = max(self.enochan_CD - 1, 0)
         self.leylines_ON = max(self.leylines_ON - 1, 0)
         self.leylines_CD = max(self.leylines_CD - 1, 0)
@@ -303,6 +306,8 @@ class GCDs:
         damage_dealt = math.floor(math.floor(math.floor(math.floor(
             d3 * random.uniform(95, 105)) / 100) * buff1) * buff2)
         dummy.damage_taken = damage_dealt
+        print("%6.2f The dummy takes %d damage from %s." %
+              (game.centiseconds / 100, damage_dealt, self.name))
 
 
 class oGCDs:
@@ -510,6 +515,11 @@ def finish_casting(game):  # TODO Umbral heart use in math_mpcost
                 else:
                     index += 1
             game.dummy.dots[index].active_time = game.dummy.dots[index].duration
+            if game.player.enochan_ON:
+                buff1 = 1.15
+            else:
+                buff1 = 1
+            game.dummy.dots[index].buff1 = buff1
         elif game.player.casting.name == "Thunder IV":
             index = 0
             for dot in game.dummy.dots:
@@ -518,6 +528,11 @@ def finish_casting(game):  # TODO Umbral heart use in math_mpcost
                 else:
                     index += 1
             game.dummy.dots[index].active_time = game.dummy.dots[index].duration
+            if game.player.enochan_ON:
+                buff1 = 1.15
+            else:
+                buff1 = 1
+            game.dummy.dots[index].buff1 = buff1
         elif game.player.casting.element == "fire" and game.player.stance >= 0:
             game.player.stance = min(game.player.stance + 1, 3)
             game.player.umbral_heart = max(game.player.umbral_heart - 1, 0)
@@ -529,12 +544,14 @@ def finish_casting(game):  # TODO Umbral heart use in math_mpcost
         elif game.player.casting.element == "fire" and not game.player.stance >= 0:
             game.player.stance = 0
             game.player.astral_umbral = 0
+            print("%6.2f You lose the effect of Umbral Ice" %
+                  (game.centiseconds / 100))
         elif game.player.casting.element == "ice" and not game.player.stance <= 0:
             game.player.stance = 0
             game.player.astral_umbral = 0
-        print("%6.2f You finished casting %s." %
-              (game.centiseconds / 100, game.player.casting.name))
-        game.player.casting = None
+            print("%6.2f You lose the effect of Astral Fire" %
+                  (game.centiseconds / 100))
+
     elif type(game.player.casting) is oGCDs:
         if game.player.casting.name == "Transpose":
             if game.player.stance > 0:
@@ -543,17 +560,26 @@ def finish_casting(game):  # TODO Umbral heart use in math_mpcost
             elif game.player.stance < 0:
                 game.player.stance = 1
                 game.player.astral_umbral = 1500
+            print("%6.2f You gain the effect of Transpose" %
+                  (game.centiseconds / 100))
         elif game.player.casting.name == "Manafont":
             game.player.mp = min(game.player.mp + 3000, 10000)
+            print("%6.2f You gain 3000 MP." % (game.centiseconds / 100))
         elif game.player.casting.name == "Enochan":
             game.player.enochan_ON = True
+            print("%6.2f You gain the effect of Enochian." %
+                  (game.centiseconds / 100))
         elif game.player.casting.name == "Triple Cast":
             game.player.tripleC = 3
+            print("%6.2f You gain the effect of Triple Cast." %
+                  (game.centiseconds / 100))
         elif game.player.casting.name == "Swift Cast":
             game.player.swift = 1
-        print("%6.2f You finished casting %s." %
-              (game.centiseconds / 100, game.player.casting.name))
-        game.player.casting = None
+            print("%6.2f You gain the effect of Swift Cast." %
+                  (game.centiseconds / 100))
+    print("%6.2f You finished casting %s." %
+          (game.centiseconds / 100, game.player.casting.name))
+    game.player.casting = None
 
 
 # TODO check for interrupts
@@ -561,14 +587,14 @@ def finish_casting(game):  # TODO Umbral heart use in math_mpcost
 def main():
     game = initialize()
     while not game.game_over:
-        # time.sleep(10)
+        time.sleep(.01)
         # Comment above line to remove real time sim
 
         if game.dummy.damage_taken:
             game.combat = True
 
-        game.player.math_mp_tick()
-        game.player.math_polyglot()
+        game.player.math_mp_tick(game)
+        game.player.math_polyglot(game)
         game.dummy.math_DoTs(game, game.player)
 
         if game.player.cast_taxed:
