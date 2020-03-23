@@ -432,8 +432,6 @@ def do_something(game):
                     action_used.math_cast(game.player)
                     game.player.transpose_CD = action_used.math_CD()
                     game.player.casting = action_used
-                    print("%6.2f You started casting %s." %
-                          (game.centiseconds / 100, action_used.name))
             elif action_used.name == "Manafont":
                 if game.player.manafont_CD:
                     return
@@ -441,8 +439,6 @@ def do_something(game):
                     action_used.math_cast(game.player)
                     game.player.manafont_CD = action_used.math_CD()
                     game.player.casting = action_used
-                    print("%6.2f You started casting %s." %
-                          (game.centiseconds / 100, action_used.name))
             elif action_used.name == "Ley Lines":
                 if game.player.leylines_CD:
                     return
@@ -451,8 +447,6 @@ def do_something(game):
                     game.player.leylines_CD = action_used.math_CD()
                     game.player.leylines_ON = action_used.duration
                     game.player.casting = action_used
-                    print("%6.2f You started casting %s." %
-                          (game.centiseconds / 100, action_used.name))
             elif action_used.name == "Enochan":
                 if game.player.enochan_CD:
                     return
@@ -460,8 +454,6 @@ def do_something(game):
                     action_used.math_cast(game.player)
                     game.player.enochan_CD = action_used.math_CD()
                     game.player.casting = action_used
-                    print("%6.2f You started casting %s." %
-                          (game.centiseconds / 100, action_used.name))
             elif action_used.name == "Triple Cast":
                 if game.player.triple_cast_CD:
                     return
@@ -470,8 +462,6 @@ def do_something(game):
                     game.player.triple_cast_CD = action_used.math_CD()
                     game.player.triple_cast_ON = action_used.duration
                     game.player.casting = action_used
-                    print("%6.2f You started casting %s." %
-                          (game.centiseconds / 100, action_used.name))
             elif action_used.name == "Swift Cast":
                 if game.player.swift_cast_CD:
                     return
@@ -480,8 +470,9 @@ def do_something(game):
                     game.player.swift_cast_CD = action_used.math_CD()
                     game.player.swift_cast_ON = action_used.duration
                     game.player.casting = action_used
-                    print("%6.2f You started casting %s." %
-                          (game.centiseconds / 100, action_used.name))
+
+            print("%6.2f You started casting %s." %
+                  (game.centiseconds / 100, action_used.name))
 
 
 # Applies effects of the cast
@@ -543,11 +534,6 @@ def finish_casting(game):  # TODO Umbral heart use in math_mpcost
             game.player.astral_umbral = 0
         print("%6.2f You finished casting %s." %
               (game.centiseconds / 100, game.player.casting.name))
-        print("      The state of enochan_ON is %s" % (game.player.enochan_ON))
-        print("      The state of Astral_Umbral is %d" %
-              (game.player.astral_umbral))
-        print("      You have %d Umbral Hearts." %
-              (game.player.umbral_heart))
         game.player.casting = None
     elif type(game.player.casting) is oGCDs:
         if game.player.casting.name == "Transpose":
@@ -578,7 +564,8 @@ def main():
         # time.sleep(10)
         # Comment above line to remove real time sim
 
-        game.combat = True
+        if game.dummy.damage_taken:
+            game.combat = True
 
         game.player.math_mp_tick()
         game.player.math_polyglot()
