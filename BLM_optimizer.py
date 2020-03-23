@@ -135,6 +135,7 @@ class Dummy:
         for dot in self.dots:
             dot.active_time = max(dot.active_time - 1, 0)
 
+    # calculated any dot's per tick damage in the dummy.dots list IF they have any duration left when they meet the server tick
     def math_DoTs(self, game, player):
         if self.character_tick == 300:
             self.character_tick = 0
@@ -246,7 +247,7 @@ class GCDs:
             mp_cost = player.mp
         elif self.name == "Despair" and player.mp < self.cost:
             return(False)
-        elif self.name == "Flare" and player.mp > self.cost:
+        elif self.name == "Flare" and player.mp > self.cost:  # Umbral heart on flare reduces the cast by a 3rd but I only observe values round values of MP meaning it's not really 1/3.... in game observation leans me toward the below formula
             if player.umbral_heart:
                 mp_cost = math.ceil((player.mp / 3) / 100 + 1) * 100
             else:
@@ -297,6 +298,7 @@ class GCDs:
         else:
             buff1 = 1
         stance = player.stances.get(player.stance)
+        # elemental stance damage modifiers being applied here
         if self.element == "ice":
             buff2 = stance.ice_dmg_mod
         elif self.element == "fire":
@@ -481,7 +483,7 @@ def do_something(game):
 
 
 # Applies effects of the cast
-def finish_casting(game):  # TODO Umbral heart use in math_mpcost
+def finish_casting(game):
     if type(game.player.casting) is GCDs:
         game.player.casting.math_damage(game, game.player, game.dummy)
         if game.player.casting.name == "Flare":
@@ -507,7 +509,7 @@ def finish_casting(game):  # TODO Umbral heart use in math_mpcost
             if not game.player.umbral_heart > 1:
                 game.player.umbral_heart = 1
             game.player.astral_umbral = 1500
-        elif game.player.casting.name == "Thunder III":
+        elif game.player.casting.name == "Thunder III":  # Dot refresh/apply and snapshot instructions are here
             index = 0
             for dot in game.dummy.dots:
                 if dot.name == "Thunder III":
