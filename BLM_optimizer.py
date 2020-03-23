@@ -595,18 +595,19 @@ def main():
         if game.dummy.damage_taken:
             game.combat = True
 
-        game.player.math_mp_tick(game)
-        game.player.math_polyglot(game)
-        game.dummy.math_DoTs(game, game.player)
+        game.player.math_mp_tick(game)  # MP regen
+        game.player.math_polyglot(game)  # Polyglot check
+        game.dummy.math_DoTs(game, game.player)  # DoT damage calculation
 
-        if game.player.cast_taxed:
+        if game.player.cast_taxed:  # can only cast another action (even if it's instant) after the taxed cast timer expired
             None
         else:
             do_something(game)
-        if game.player.cast_time == 0 and game.player.casting is not None:
-            finish_casting(game)
+        if game.player.cast_time == 0 and game.player.casting is not None: 
+            finish_casting(game)  # apply effects
 
-        game.update()
+        # update all the values before next cycle
+        game.update()  
         game.player.update()
         game.dummy.update()
 
