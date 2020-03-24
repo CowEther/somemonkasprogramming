@@ -32,7 +32,7 @@ class DQNAgent(object):
                         activation='relu', input_dim=31))
         model.add(Dense(output_dim=self.second_layer, activation='relu',))
         model.add(Dense(output_dim=self.third_layer, activation='relu',))
-        model.add(Dense(output_dim=3, activation='relu',))
+        model.add(Dense(output_dim=24, activation='relu',))
         opt = Adam(self.learning_rate)
         model.compile(loss='mse', optimizer=opt)
         if self.load_weights:
@@ -78,36 +78,39 @@ class DQNAgent(object):
 
         return numpy.asarray(state)
 
-        def set_reward(self, game):
+    def set_reward(self, game):
+        if game.centiseconds:
             self.reward = game.dummy.damage_taken / game.centiseconds * 100
-            return self.reward
+        else:
+            self.reward = 0
+        return self.reward
 
-        def remember(self, state, action, reward, next_state, done):
-            self.memory.append((state, action, reward, next_state, done))
+    def remember(self, state, action, reward, next_state, done):
+        self.memory.append((state, action, reward, next_state, done))
 
-        def replay_new(self, memory, batch_size):
-            if len(memory) > batch_size:
-                minibatch = random.sample(memory, batch_size)
-            else:
-                minibatch = memory
-            for state, action, reward, next_state, done in minibatch:
-                target = reward
-                if not done:
-                    target = reward + self.gamma * \
-                        numpy.amax(self.model.predict(
-                            numpy.array([next_state]))[0])
-                target_f = self.model.predict(numpy.array([state]))
-                target_f[0][numpy.argmax(action)] = target
-                self.model.fit(numpy.array([state]),
-                               target_f, epochs=1, verbose=0)
-
-        def train_short_memory(self, state, action, reward, next_state, done):
+    def replay_new(self, memory, batch_size):
+        if len(memory) > batch_size:
+            minibatch = random.sample(memory, batch_size)
+        else:
+            minibatch = memory
+        for state, action, reward, next_state, done in minibatch:
             target = reward
             if not done:
                 target = reward + self.gamma * \
                     numpy.amax(self.model.predict(
-                        next_state.reshape((1, 11)))[0])
-            target_f = self.model.predict(state.reshape((1, 11)))
+                        numpy.array([next_state]))[0])
+            target_f = self.model.predict(numpy.array([state]))
             target_f[0][numpy.argmax(action)] = target
-            self.model.fit(state.reshape((1, 11)),
+            self.model.fit(numpy.array([state]),
                            target_f, epochs=1, verbose=0)
+
+    def train_short_memory(self, state, action, reward, next_state, done):
+        target = reward
+        if not done:
+            target = reward + self.gamma * \
+                numpy.amax(self.model.predict(
+                    next_state.reshape((1, 31)))[0])
+        target_f = self.model.predict(state.reshape((1, 31)))
+        target_f[0][numpy.argmax(action)] = target
+        self.model.fit(state.reshape((1, 31)),
+                       target_f, epochs=1, verbose=0)
