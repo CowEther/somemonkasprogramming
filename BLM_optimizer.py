@@ -2,6 +2,26 @@ import os
 import random
 import math
 import time
+from BLM_agent import DQNAgent
+import keras
+import sys
+import numpy
+
+
+def define_parameters():
+    params = dict()
+    params['epsilon_decay_linear'] = 1 / 75
+    params['learning_rate'] = 0.0005
+    params['first_layer_size'] = 150   # neurons in the first layer
+    params['second_layer_size'] = 150   # neurons in the second layer
+    params['third_layer_size'] = 150    # neurons in the third layer
+    params['episodes'] = 100
+    params['memory_size'] = 2500
+    params['batch_size'] = 500
+    params['weights_path'] = 'weights/weights.hdf5'
+    params['load_weights'] = False
+    params['train'] = True
+    return params
 
 
 class Game:
@@ -76,17 +96,15 @@ class Player:
         if self.character_tick == 300:
             self.character_tick = 0
             self.mp = min(mp_per_tick * mp_mod + self.mp, 10000)
-            if mp_per_tick * mp_mod:
-                print("%6.2f You gain %d MP." %
-                      (game.centiseconds / 100, mp_per_tick * mp_mod))
+            # if mp_per_tick * mp_mod:
+            # print("%6.2f You gain %d MP." % (game.centiseconds / 100, mp_per_tick * mp_mod))
 
-    # adds 1 polyglot every 30s of active enochan
+            # adds 1 polyglot every 30s of active enochan
     def math_polyglot(self, game):
         if self.polyglot_counter == 3000:
             self.polyglot_counter = 0
             self.polyglot = min(self.polyglot + 1, 2)
-            print("%6.2f You gain a polyglot stack MP." %
-                  (game.centiseconds / 100))
+            # print("%6.2f You gain a polyglot stack MP." % (game.centiseconds / 100))
 
     # updates every player counters
     def update(self):
@@ -171,8 +189,7 @@ class Dummy:
                     damage = math.floor(math.floor(math.floor(math.floor(
                         math.floor(d3 * fcrit) / 1000) * dh) / 100) * dot.buff1)
                     self.damage_taken += damage
-                    print("%6.2f The dummy takes %d damage from %s." %
-                          (game.centiseconds / 100, damage, dot.name))
+                    # print("%6.2f The dummy takes %d damage from %s." % (game.centiseconds / 100, damage, dot.name))
 
 
 # Umbral Ice and Astral Fire class
@@ -247,7 +264,7 @@ class GCDs:
             mp_cost = player.mp
         elif self.name == "Despair" and player.mp < self.cost:
             return(False)
-        elif self.name == "Flare" and player.mp > self.cost:  # Umbral heart on flare reduces the cast by a 3rd but I only observe values round values of MP meaning it's not really 1/3.... in game observation leans me toward the below formula
+        elif self.name == "Flare" and player.mp > self.cost:  # Umbral heart on flare reduces the cast by a 3rd but I only observe round values of MP meaning it's not really 1/3.... in game observation leans me toward the below formula
             if player.umbral_heart:
                 mp_cost = math.ceil((player.mp / 3) / 100 + 1) * 100
             else:
@@ -307,9 +324,8 @@ class GCDs:
             buff2 = 1
         damage_dealt = math.floor(math.floor(math.floor(math.floor(
             d3 * random.uniform(95, 105)) / 100) * buff1) * buff2)
-        dummy.damage_taken = damage_dealt
-        print("%6.2f The dummy takes %d damage from %s." %
-              (game.centiseconds / 100, damage_dealt, self.name))
+        dummy.damage_taken += damage_dealt
+        # print("%6.2f The dummy takes %d damage from %s." % (game.centiseconds / 100, damage_dealt, self.name))
 
 
 class oGCDs:
@@ -337,7 +353,6 @@ class DoTs:
 
 # initialize classes and player stance/actions
 def initialize():
-    os.system("cls")
 
     game = Game(("Time limit", 39000))
 
@@ -404,8 +419,10 @@ def initialize():
 
 
 # wastes 1 centisecond if attempting to do an action that cannot be used atm
-def do_something(game):
-    action_used = random.choice(game.player.available_actions)
+def do_something(final_move, game):
+    index = numpy.where(final_move == 1)[0][0]
+    action_used = game.player.available_actions[index]
+    print("Action used is : %s" % action_used.name)
     if action_used is not None:
         if type(action_used) is GCDs:
             if action_used.math_mpcost(game.player) and not game.player.gcd_CD:
@@ -422,12 +439,11 @@ def do_something(game):
                 elif action_used.name == "Umbral Soul" and (not game.player.enochan_ON or not game.player.stance < 0):
                     return
                 else:
-                    print("")
+                    # print("")
                     game.player.casting = action_used
                     action_used.math_cast(game.player)
                     action_used.math_GCD_CD(game.player)
-                    print("%6.2f You started casting %s." %
-                          (game.centiseconds / 100, action_used.name))
+                    # print("%6.2f You started casting %s." % (game.centiseconds / 100, action_used.name))
             else:
                 return
 
@@ -478,8 +494,7 @@ def do_something(game):
                     game.player.swift_cast_ON = action_used.duration
                     game.player.casting = action_used
 
-            print("%6.2f You started casting %s." %
-                  (game.centiseconds / 100, action_used.name))
+            # print("%6.2f You started casting %s." % (game.centiseconds / 100, action_used.name))
 
 
 # Applies effects of the cast
@@ -546,13 +561,11 @@ def finish_casting(game):
         elif game.player.casting.element == "fire" and not game.player.stance >= 0:
             game.player.stance = 0
             game.player.astral_umbral = 0
-            print("%6.2f You lose the effect of Umbral Ice" %
-                  (game.centiseconds / 100))
+            # print("%6.2f You lose the effect of Umbral Ice" % (game.centiseconds / 100))
         elif game.player.casting.element == "ice" and not game.player.stance <= 0:
             game.player.stance = 0
             game.player.astral_umbral = 0
-            print("%6.2f You lose the effect of Astral Fire" %
-                  (game.centiseconds / 100))
+            # print("%6.2f You lose the effect of Astral Fire" % (game.centiseconds / 100))
 
     elif type(game.player.casting) is oGCDs:
         if game.player.casting.name == "Transpose":
@@ -562,54 +575,103 @@ def finish_casting(game):
             elif game.player.stance < 0:
                 game.player.stance = 1
                 game.player.astral_umbral = 1500
-            print("%6.2f You gain the effect of Transpose" %
-                  (game.centiseconds / 100))
+            # print("%6.2f You gain the effect of Transpose" % (game.centiseconds / 100))
         elif game.player.casting.name == "Manafont":
             game.player.mp = min(game.player.mp + 3000, 10000)
-            print("%6.2f You gain 3000 MP." % (game.centiseconds / 100))
+            # print("%6.2f You gain 3000 MP." % (game.centiseconds / 100))
         elif game.player.casting.name == "Enochan":
             game.player.enochan_ON = True
-            print("%6.2f You gain the effect of Enochian." %
-                  (game.centiseconds / 100))
+            # print("%6.2f You gain the effect of Enochian." % (game.centiseconds / 100))
         elif game.player.casting.name == "Triple Cast":
             game.player.tripleC = 3
-            print("%6.2f You gain the effect of Triple Cast." %
-                  (game.centiseconds / 100))
+            # print("%6.2f You gain the effect of Triple Cast." % (game.centiseconds / 100))
         elif game.player.casting.name == "Swift Cast":
             game.player.swift = 1
-            print("%6.2f You gain the effect of Swift Cast." %
-                  (game.centiseconds / 100))
-    print("%6.2f You finished casting %s." %
-          (game.centiseconds / 100, game.player.casting.name))
+            # print("%6.2f You gain the effect of Swift Cast." % (game.centiseconds / 100))
+    # print("%6.2f You finished casting %s." % (game.centiseconds / 100, game.player.casting.name))
     game.player.casting = None
 
 
 # TODO check for interrupts
 
 def main():
-    game = initialize()
-    while not game.game_over:
-        time.sleep(.01)
-        # Comment above line to remove real time sim
 
-        if game.dummy.damage_taken:
-            game.combat = True
+    counter_games = 0
+    record = 0
 
-        game.player.math_mp_tick(game)  # MP regen
-        game.player.math_polyglot(game)  # Polyglot check
-        game.dummy.math_DoTs(game, game.player)  # DoT damage calculation
+    params = define_parameters()
+    agent = DQNAgent(params)
+    weights_filepath = params['weights_path']
+    if params['load_weights']:
+        agent.model.load_weights(weights_filepath)
+        # print("weights loaded")
 
-        if game.player.cast_taxed:  # can only cast another action (even if it's instant) after the taxed cast timer expired
-            None
-        else:
-            do_something(game)
-        if game.player.cast_time == 0 and game.player.casting is not None: 
-            finish_casting(game)  # apply effects
+    os.system("cls")
+    while counter_games < params['episodes']:
+        game = initialize()
+        while not game.game_over:
+            # time.sleep(.01)
+            # Comment above line to remove real time sim
 
-        # update all the values before next cycle
-        game.update()  
-        game.player.update()
-        game.dummy.update()
+            if not params['train']:
+                agent.epsilon = 0
+            else:
+                # agent.epsilon is set to give randomness to actions
+                agent.epsilon = 1 - \
+                    (counter_games * params['epsilon_decay_linear'])
+
+            # get old state
+            state_old = agent.get_state(game)
+
+            if game.dummy.damage_taken:
+                game.combat = True
+
+            game.player.math_mp_tick(game)
+            game.player.math_polyglot(game)
+            game.dummy.math_DoTs(game, game.player)
+
+            if game.player.cast_taxed:
+                None
+            else:
+                if random.randint(0, 1) < agent.epsilon:
+                    final_move = keras.utils.to_categorical(
+                        random.randint(0, 23), num_classes=24)
+                else:
+                    # predict action based on the old state
+                    prediction = agent.model.predict(
+                        state_old.reshape((1, 31)))
+                    final_move = keras.utils.to_categorical(
+                        numpy.argmax(prediction[0]), num_classes=24)
+                do_something(final_move, game)
+            if game.player.cast_time == 0 and game.player.casting is not None:
+                finish_casting(game)
+
+            state_new = agent.get_state(game)
+            reward = agent.set_reward(game)
+            if params['train']:
+                # train short memory base on the new action and state
+                # state, action, reward, next_state, done
+                agent.train_short_memory(
+                    state_old, final_move, reward, state_new, game.game_over)
+                # store the new data into a long term memory
+                agent.remember(state_old, final_move,
+                               reward, state_new, game.game_over)
+
+            game.update()
+            game.player.update()
+            game.dummy.update()
+
+        if params['train']:
+            agent.replay_new(agent.memory, params['batch_size'])
+        if params['train']:
+            agent.model.save_weights(params['weights_path'])
+        counter_games += 1
+        dps = game.dummy.damage_taken / game.centiseconds * 100
+        if dps > record:
+            record = dps
+        sys.stdout.write("\033[K")
+        print("Current amount of games is : %3d    Current record is: %.2f" %
+              (counter_games, record))
 
 
 main()
