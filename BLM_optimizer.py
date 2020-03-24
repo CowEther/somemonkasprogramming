@@ -422,7 +422,6 @@ def initialize():
 def do_something(final_move, game):
     index = numpy.where(final_move == 1)[0][0]
     action_used = game.player.available_actions[index]
-    print("Action used is : %s" % action_used.name)
     if action_used is not None:
         if type(action_used) is GCDs:
             if action_used.math_mpcost(game.player) and not game.player.gcd_CD:
@@ -674,4 +673,5 @@ def main():
               (counter_games, record))
 
 
-main()
+if __name__ == '__main__':
+    main()
