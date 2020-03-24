@@ -493,7 +493,8 @@ def do_something(final_move, game):
                     game.player.swift_cast_ON = action_used.duration
                     game.player.casting = action_used
 
-            # print("%6.2f You started casting %s." % (game.centiseconds / 100, action_used.name))
+        print("%6.2f You started casting %s." %
+              (game.centiseconds / 100, action_used.name))
 
 
 # Applies effects of the cast
@@ -638,7 +639,7 @@ def main():
                 else:
                     # predict action based on the old state
                     prediction = agent.model.predict(
-                        state_old.reshape((1, 31)))
+                        state_old.reshape((1, 30)))
                     final_move = keras.utils.to_categorical(
                         numpy.argmax(prediction[0]), num_classes=24)
                 do_something(final_move, game)
