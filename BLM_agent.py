@@ -29,7 +29,7 @@ class DQNAgent(object):
     def network(self):
         model = Sequential()
         model.add(Dense(output_dim=self.first_layer,
-                        activation='relu', input_dim=31))
+                        activation='relu', input_dim=30))
         model.add(Dense(output_dim=self.second_layer, activation='relu',))
         model.add(Dense(output_dim=self.third_layer, activation='relu',))
         model.add(Dense(output_dim=24, activation='relu',))
@@ -47,7 +47,6 @@ class DQNAgent(object):
             game.player.character_tick,
             game.player.mp,
             game.player.umbral_heart,
-            game.player.casting,
             game.player.cast_time,
             game.player.cast_taxed,
             game.player.gcd_CD,
@@ -109,8 +108,8 @@ class DQNAgent(object):
         if not done:
             target = reward + self.gamma * \
                 numpy.amax(self.model.predict(
-                    next_state.reshape((1, 31)))[0])
-        target_f = self.model.predict(state.reshape((1, 31)))
+                    next_state.reshape((1, 30)))[0])
+        target_f = self.model.predict(state.reshape((1, 30)))
         target_f[0][numpy.argmax(action)] = target
-        self.model.fit(state.reshape((1, 31)),
+        self.model.fit(state.reshape((1, 30)),
                        target_f, epochs=1, verbose=0)
