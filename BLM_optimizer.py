@@ -144,6 +144,7 @@ class Player:
 class Dummy:
     def __init__(self):
         self.damage_taken = 0
+        self.damage_received = 0
 
         self.dots = None
         self.character_tick = random.randint(0, 300)
@@ -325,6 +326,7 @@ class GCDs:
         damage_dealt = math.floor(math.floor(math.floor(math.floor(
             d3 * random.uniform(95, 105)) / 100) * buff1) * buff2)
         dummy.damage_taken += damage_dealt
+        dummy.damage_received = damage_dealt
         # print("%6.2f The dummy takes %d damage from %s." % (game.centiseconds / 100, damage_dealt, self.name))
 
 
@@ -426,17 +428,17 @@ def do_something(final_move, game):
         if type(action_used) is GCDs:
             if action_used.math_mpcost(game.player) and not game.player.gcd_CD:
                 if action_used.name == "Despair" and (game.player.stance != 3 or not game.player.enochan_ON):
-                    return
+                    game.player.cast_taxed = 75
                 elif action_used.name == "Xenoglossy" and not game.player.polyglot > 0:
-                    return
+                    game.player.cast_taxed = 75
                 elif action_used.name == "Foul" and not game.player.polyglot > 0:
-                    return
+                    game.player.cast_taxed = 75
                 elif action_used.name == "Fire IV" and (game.player.stance != 3 or not game.player.enochan_ON):
-                    return
+                    game.player.cast_taxed = 75
                 elif action_used.name == "Blizzard IV" and (game.player.stance != -3 or not game.player.enochan_ON):
-                    return
+                    game.player.cast_taxed = 75
                 elif action_used.name == "Umbral Soul" and (not game.player.enochan_ON or not game.player.stance < 0):
-                    return
+                    game.player.cast_taxed = 75
                 else:
                     # print("")
                     game.player.casting = action_used
@@ -444,26 +446,26 @@ def do_something(final_move, game):
                     action_used.math_GCD_CD(game.player)
                     # print("%6.2f You started casting %s." % (game.centiseconds / 100, action_used.name))
             else:
-                return
+                game.player.cast_taxed = 75
 
         elif type(action_used) is oGCDs:
             if action_used.name == "Transpose":
                 if game.player.transpose_CD:
-                    return
+                    game.player.cast_taxed = 75
                 else:
                     action_used.math_cast(game.player)
                     game.player.transpose_CD = action_used.math_CD()
                     game.player.casting = action_used
             elif action_used.name == "Manafont":
                 if game.player.manafont_CD:
-                    return
+                    game.player.cast_taxed = 75
                 else:
                     action_used.math_cast(game.player)
                     game.player.manafont_CD = action_used.math_CD()
                     game.player.casting = action_used
             elif action_used.name == "Ley Lines":
                 if game.player.leylines_CD:
-                    return
+                    game.player.cast_taxed = 75
                 else:
                     action_used.math_cast(game.player)
                     game.player.leylines_CD = action_used.math_CD()
@@ -471,14 +473,14 @@ def do_something(final_move, game):
                     game.player.casting = action_used
             elif action_used.name == "Enochan":
                 if game.player.enochan_CD:
-                    return
+                    game.player.cast_taxed = 75
                 else:
                     action_used.math_cast(game.player)
                     game.player.enochan_CD = action_used.math_CD()
                     game.player.casting = action_used
             elif action_used.name == "Triple Cast":
                 if game.player.triple_cast_CD:
-                    return
+                    game.player.cast_taxed = 75
                 else:
                     action_used.math_cast(game.player)
                     game.player.triple_cast_CD = action_used.math_CD()
@@ -486,15 +488,15 @@ def do_something(final_move, game):
                     game.player.casting = action_used
             elif action_used.name == "Swift Cast":
                 if game.player.swift_cast_CD:
-                    return
+                    game.player.cast_taxed = 75
                 else:
                     action_used.math_cast(game.player)
                     game.player.swift_cast_CD = action_used.math_CD()
                     game.player.swift_cast_ON = action_used.duration
                     game.player.casting = action_used
-
-        print("%6.2f You started casting %s." %
-              (game.centiseconds / 100, action_used.name))
+        elif action_used is None:
+            game.player.cast_taxed = 75
+        # print("%6.2f You started casting %s." % (game.centiseconds / 100, action_used.name))
 
 
 # Applies effects of the cast
@@ -606,7 +608,6 @@ def main():
         agent.model.load_weights(weights_filepath)
         # print("weights loaded")
 
-    os.system("cls")
     while counter_games < params['episodes']:
         game = initialize()
         while not game.game_over:
@@ -620,9 +621,6 @@ def main():
                 agent.epsilon = 1 - \
                     (counter_games * params['epsilon_decay_linear'])
 
-            # get old state
-            state_old = agent.get_state(game)
-
             if game.dummy.damage_taken:
                 game.combat = True
 
@@ -633,6 +631,10 @@ def main():
             if game.player.cast_taxed:
                 None
             else:
+
+                # get old state
+                state_old = agent.get_state(game)
+
                 if random.randint(0, 1) < agent.epsilon:
                     final_move = keras.utils.to_categorical(
                         random.randint(0, 23), num_classes=24)
@@ -645,17 +647,16 @@ def main():
                 do_something(final_move, game)
             if game.player.cast_time == 0 and game.player.casting is not None:
                 finish_casting(game)
-
-            state_new = agent.get_state(game)
-            reward = agent.set_reward(game)
-            if params['train']:
-                # train short memory base on the new action and state
-                # state, action, reward, next_state, done
-                agent.train_short_memory(
-                    state_old, final_move, reward, state_new, game.game_over)
-                # store the new data into a long term memory
-                agent.remember(state_old, final_move,
-                               reward, state_new, game.game_over)
+                state_new = agent.get_state(game)
+                reward = agent.set_reward(game)
+                if params['train']:
+                    # train short memory base on the new action and state
+                    # state, action, reward, next_state, done
+                    agent.train_short_memory(
+                        state_old, final_move, reward, state_new, game.game_over)
+                    # store the new data into a long term memory
+                    agent.remember(state_old, final_move,
+                                   reward, state_new, game.game_over)
 
             game.update()
             game.player.update()
@@ -669,7 +670,6 @@ def main():
         dps = game.dummy.damage_taken / game.centiseconds * 100
         if dps > record:
             record = dps
-        sys.stdout.write("\033[K")
         print("Current amount of games is : %3d    Current record is: %.2f" %
               (counter_games, record))
 
